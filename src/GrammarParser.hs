@@ -21,9 +21,6 @@ formatGrammar Grammar{..} =
   grammarName ++ "\n" ++ replicate (length grammarName) '=' ++ "\n"
   ++ unlines (map formatRule rules)
 
-createHaskellParser::Grammar->String
-createHaskellParser = undefined
-
 parseGrammar::Parsec String () Grammar
 parseGrammar = do
   whiteSpace
@@ -107,15 +104,15 @@ parseOr = do
 
 data TermList =
   TermList{
-    listTerms::[Term]
+    listTerms::[ModifiedTerm]
     } deriving (Show)
 
 formatTermList TermList{..} =
-  unwords $ map formatTerm listTerms
+  unwords $ map formatModifiedTerm listTerms
 
 parseTerms = do
   terms <- many $ do
-    t <- parseTerm
+    t <- parseModifiedTerm
     whiteSpace
     return t
   return TermList{
@@ -146,28 +143,42 @@ data Term =
 
 data Modifier = Many | Option | Plus | None deriving (Show)
 
+data ModifiedTerm = ModifiedTerm Term Modifier deriving (Show)
+
 formatModifier Many = "*"
 formatModifier Option = "?"
 formatModifier Plus = "+"
 formatModifier None = ""
 
+formatModifiedTerm (ModifiedTerm t m) = formatTerm t ++ formatModifier m
 
-formatTerm RuleTerm{..} = termName ++ formatModifier modifier
-formatTerm ParenTerm{..} = "(" ++ intercalate " | " (map formatTermList (orTerm parenTermOptions)) ++ ")" ++ formatModifier modifier
-formatTerm CharTerm{..} = show theChar ++ formatModifier modifier
-formatTerm CharRangeTerm{..} = format range ++ formatModifier modifier
-formatTerm CharSetTerm{..} = format charset ++ formatModifier modifier
+formatTerm::Term->String
+formatTerm RuleTerm{..} = termName
+formatTerm ParenTerm{..} = "(" ++ intercalate " | " (map formatTermList (orTerm parenTermOptions)) ++ ")"
+formatTerm CharTerm{..} = show theChar
+formatTerm CharRangeTerm{..} = format range
+formatTerm CharSetTerm{..} = format charset
 
-parseTerm = do
-  term <- parseRuleTerm <|> parseParenTerm <|> parseCharOrCharRangeTerm <|> parseCharSetTerm
+parseModifiedTerm::Parsec String () ModifiedTerm
+parseModifiedTerm = do
+  term <- parseTerm
   whiteSpace
   maybeModifierChar <- optionMaybe $ oneOf "*?+"
 
-  case maybeModifierChar of
-   Nothing -> return term
-   Just '*' -> return term{modifier=Many}
-   Just '?' -> return term{modifier=Option}
-   Just '+' -> return term{modifier=Plus}
+  let modifier = 
+        case maybeModifierChar of
+         Nothing -> None
+         Just '*' -> Many
+         Just '?' -> Option
+         Just '+' -> Plus
+         
+  return $ ModifiedTerm term modifier
+
+
+
+parseTerm = do
+  parseRuleTerm <|> parseParenTerm <|> parseCharOrCharRangeTerm <|> parseCharSetTerm
+
 
 
 parseRuleTerm = do
