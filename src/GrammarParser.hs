@@ -245,17 +245,29 @@ parseChar = do
   char '\''
   return c
 
+parseString::Parsec String () String
+parseString = do
+  char '\''
+  st <- many $ noneOf "'"
+  char '\''
+  return st
+
 {-
 parseRuleName = undefined
 -}
 
 whiteSpace = do
-  many $ (parseComment <|> (space >> return ()))
+  many $ (try parseComment <|> try parseLineComment <|> (space >> return ()))
 
 parseComment = do
   string "/*"
   manyTill (anyChar) $ try $ string "*/"
   return ()
 
+parseLineComment = do
+  string "//"
+  many $ noneOf "\r\n"
+  return ()
+  
 parseWord = do
   many1 alphaNum
