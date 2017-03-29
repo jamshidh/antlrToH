@@ -121,24 +121,19 @@ parseTerms = do
 
 data Term =
   RuleTerm {
-    termName::String,
-    modifier::Modifier
+    termName::String
     }
   | ParenTerm {
-    parenTermOptions::Or,
-    modifier::Modifier
+    parenTermOptions::Or
     }
   | CharTerm {
-    theChar::Char,
-    modifier::Modifier
+    theChar::Char
     }
   | CharRangeTerm {
-    range::CharRange,
-    modifier::Modifier
+    range::CharRange
     }
   | CharSetTerm {
-    charset::CharSet,
-    modifier::Modifier
+    charset::CharSet
     } deriving (Show)
 
 data Modifier = Many | Option | Plus | None deriving (Show)
@@ -183,11 +178,11 @@ parseTerm = do
 
 parseRuleTerm = do
   word <- parseWord
-  return $ RuleTerm word None
+  return $ RuleTerm word
 
 parseParenTerm = do
   paren <- parseParen
-  return $ ParenTerm paren None
+  return $ ParenTerm paren
 
 parseCharOrCharRangeTerm = do
   c <- parseChar
@@ -199,8 +194,8 @@ parseCharOrCharRangeTerm = do
       parseChar
 
   case maybeChar of
-   Nothing -> return $ CharTerm c None
-   Just toC -> return $ CharRangeTerm (CharRange c toC) None
+   Nothing -> return $ CharTerm c
+   Just toC -> return $ CharRangeTerm (CharRange c toC)
 
 data CharRange = CharRange Char Char deriving (Show)
 
@@ -220,7 +215,7 @@ instance Format Char where
 
 parseCharSetTerm = do
   charset <- parseCharSet
-  return CharSetTerm{charset=charset, modifier=None}
+  return CharSetTerm{charset=charset}
 
 parseCharRange = do
   parseChar
