@@ -7,7 +7,8 @@ import ParserCreator
 
 main :: IO ()
 main = do
-  contents <- readFile "arithmetic.g4"
+  --contents <- readFile "arithmetic.g4"
+  contents <- readFile "Solidity.g4"
   let x = parse parseGrammar "<hardcoded>" contents
   case x of
    Left e -> putStrLn $ show e
