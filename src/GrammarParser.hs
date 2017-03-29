@@ -6,6 +6,7 @@
 module GrammarParser where
 
 import Data.List
+import Data.Maybe
 import Text.Parsec
 
 class Format a where
@@ -39,6 +40,7 @@ parseGrammar = do
 
 data Rule =
   Rule {
+    fragment::Bool,
     ruleName::String,
     options::Or
     } deriving (Show)
@@ -50,6 +52,8 @@ formatRule Rule{..} =
 
 --parseRule::Parsec String
 parseRule = do
+  fragment <- fmap isJust $ optionMaybe $ try $ string "fragment"
+  whiteSpace
   name <- parseWord
   whiteSpace
   char ':'
@@ -63,6 +67,7 @@ parseRule = do
     whiteSpace
   char ';'
   return Rule {
+    fragment=fragment,
     ruleName=name,
     options=options
     }
@@ -74,11 +79,16 @@ parseLexerCommand = do
   <|> string "mode()"
   <|> string "pushMode()"
   <|> string "type()"
-  <|> string "channel (HIDDEN)"
+  <|> do
+    string "channel"
+    whiteSpace
+    string "(HIDDEN)"
 
 parseParen = do
   char '('
+  whiteSpace
   options <- parseOr
+  whiteSpace
   char ')'
   return options
 
@@ -120,14 +130,15 @@ parseTerms = do
     }
 
 data Term =
-  RuleTerm {
+  AnyChar
+  | RuleTerm {
     termName::String
     }
   | ParenTerm {
     parenTermOptions::Or
     }
   | CharTerm {
-    theChar::Char
+    theChar::String
     }
   | CharRangeTerm {
     range::CharRange
@@ -136,18 +147,19 @@ data Term =
     charset::CharSet
     } deriving (Show)
 
-data Modifier = Many | Option | Plus | None deriving (Show)
+data Modifier = Many Bool | Option | Plus | None deriving (Show)
 
-data ModifiedTerm = ModifiedTerm Term Modifier deriving (Show)
+data ModifiedTerm = ModifiedTerm Bool Term Modifier deriving (Show)
 
-formatModifier Many = "*"
+formatModifier (Many greedy) = "*" ++ if greedy then "?" else ""
 formatModifier Option = "?"
 formatModifier Plus = "+"
 formatModifier None = ""
 
-formatModifiedTerm (ModifiedTerm t m) = formatTerm t ++ formatModifier m
+formatModifiedTerm (ModifiedTerm negated t m) = if negated then "~" else "" ++ formatTerm t ++ formatModifier m
 
 formatTerm::Term->String
+formatTerm AnyChar = "."
 formatTerm RuleTerm{..} = termName
 formatTerm ParenTerm{..} = "(" ++ intercalate " | " (map formatTermList (orTerm parenTermOptions)) ++ ")"
 formatTerm CharTerm{..} = show theChar
@@ -156,25 +168,31 @@ formatTerm CharSetTerm{..} = format charset
 
 parseModifiedTerm::Parsec String () ModifiedTerm
 parseModifiedTerm = do
+  negated <- fmap isJust $ optionMaybe $ char '~'
   term <- parseTerm
   whiteSpace
   maybeModifierChar <- optionMaybe $ oneOf "*?+"
+  greedyFlag <- fmap isJust $ optionMaybe $ char '?'
 
   let modifier = 
         case maybeModifierChar of
          Nothing -> None
-         Just '*' -> Many
+         Just '*' -> Many greedyFlag
          Just '?' -> Option
          Just '+' -> Plus
          
-  return $ ModifiedTerm term modifier
+  return $ ModifiedTerm negated term modifier
 
 
 
 parseTerm = do
-  parseRuleTerm <|> parseParenTerm <|> parseCharOrCharRangeTerm <|> parseCharSetTerm
+  parseAnyChar <|> parseRuleTerm <|> parseParenTerm <|> parseCharOrCharRangeTerm <|> parseCharSetTerm
 
 
+
+parseAnyChar = do
+  char '.'
+  return AnyChar
 
 parseRuleTerm = do
   word <- parseWord
@@ -185,28 +203,32 @@ parseParenTerm = do
   return $ ParenTerm paren
 
 parseCharOrCharRangeTerm = do
-  c <- parseChar
+  c <- parseString
   whiteSpace
   maybeChar <-
     optionMaybe $ do
-      string ".."
+      try $ string ".."
       whiteSpace
-      parseChar
+      parseString
 
   case maybeChar of
    Nothing -> return $ CharTerm c
    Just toC -> return $ CharRangeTerm (CharRange c toC)
 
-data CharRange = CharRange Char Char deriving (Show)
+data CharRange = CharRange String String deriving (Show)
 
 instance Format CharRange where
   format (CharRange from to) = show from ++ ".." ++ show to
 
-data CharSet = CharSet [Char] deriving (Show)
+data CharSet = CharSet [CharOrSetRange] deriving (Show)
 
 instance Format CharSet where
   format (CharSet cs) = "[" ++ concat (map format cs) ++ "]"
 
+instance Format CharOrSetRange where
+  format (AChar c) = format c
+  format (ARange c1 c2) = format c1 ++ "-" ++ format c2
+  
 instance Format Char where
   format '\n' = "\\n"
   format '\t' = "\\t"
@@ -220,23 +242,40 @@ parseCharSetTerm = do
 parseCharRange = do
   parseChar
   whiteSpace
-  string ".."
+  try $ string ".."
   whiteSpace
   parseChar
   return ()
 
 parseCharSet = do
   char '['
-  charset <- many parseCharSetChar
+  charset <- many parseCharSetCharOrSetRange
   char ']'
   return $ CharSet charset
 
-parseCharSetChar = do
-  parseEscapedChar <|> (oneOf (['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ " "))
+data CharOrSetRange = AChar Char | ARange Char Char deriving (Show)
+
+parseCharSetCharOrSetRange = do
+  c <- parseEscapedChar <|> (oneOf (['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ "'\" $_"))
+  maybeChar <-
+    optionMaybe $ do
+      char '-'
+      parseEscapedChar <|> (oneOf (['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ " "))
+
+  case maybeChar of
+   Nothing -> return $ AChar c
+   Just toC -> return $ ARange c toC
+
+
 
 parseEscapedChar = do
   char '\\'
-  c <- oneOf "nrt"
+  c <- oneOf "nrt\\" <|> do
+    char 'u'
+    anyChar
+    anyChar
+    anyChar
+    anyChar
   return $ read ['\'', '\\', c, '\'']
   
 parseChar = do
@@ -245,10 +284,20 @@ parseChar = do
   char '\''
   return c
 
+
+parseEChar = do
+  noneOf "\\'" <|> do
+    char '\\'
+    c <- anyChar
+    return $
+      case c of
+        '\'' -> '\''
+        '\\' -> '\\'
+
 parseString::Parsec String () String
 parseString = do
   char '\''
-  st <- many $ noneOf "'"
+  st <- many $ parseEChar
   char '\''
   return st
 
@@ -270,4 +319,4 @@ parseLineComment = do
   return ()
   
 parseWord = do
-  many1 alphaNum
+  many1 $ alphaNum <|> char '_'

@@ -32,11 +32,12 @@ createTermListParser termList =
   "fmap concat (sequence [" ++ intercalate ", " (map createModifiedParser $ listTerms termList) ++ "])"
 
 createModifiedParser::ModifiedTerm->String
-createModifiedParser (ModifiedTerm t Many) = "fmap concat (many (" ++ createTermParser t ++ "))"
-createModifiedParser (ModifiedTerm t Option) = "option \"\" (" ++ createTermParser t ++ ")"
-createModifiedParser (ModifiedTerm t Plus) = "fmap concat (many1 (" ++ createTermParser t ++ "))"
-createModifiedParser (ModifiedTerm t None) = createTermParser t
+createModifiedParser (ModifiedTerm negated t (Many greedy)) = "fmap concat (many (" ++ createTermParser t ++ "))"
+createModifiedParser (ModifiedTerm negated t Option) = "option \"\" (" ++ createTermParser t ++ ")"
+createModifiedParser (ModifiedTerm negated t Plus) = "fmap concat (many1 (" ++ createTermParser t ++ "))"
+createModifiedParser (ModifiedTerm negated t None) = createTermParser t
 
+createTermParser AnyChar = "anyChar"
 createTermParser RuleTerm{..} = "fmap (wrap \"" ++ termName ++ "\") parse" ++ toUpper (head termName):tail termName
 createTermParser ParenTerm{..} = "choice [" ++ intercalate ", " (map createTermListParser $ orTerm parenTermOptions) ++ "]"
 createTermParser CharTerm{..} = "fmap show (char " ++ show theChar ++ ")"
