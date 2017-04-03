@@ -270,13 +270,17 @@ parseCharSetCharOrSetRange = do
 
 parseEscapedChar = do
   char '\\'
-  c <- oneOf "nrt\\" <|> do
+  c <- do
+    c1 <- oneOf "nrt\\"
+    return ['\\', c1]
+    <|> do
     char 'u'
-    anyChar
-    anyChar
-    anyChar
-    anyChar
-  return $ read ['\'', '\\', c, '\'']
+    c1 <- anyChar
+    c2 <- anyChar
+    c3 <- anyChar
+    c4 <- anyChar
+    return ['\\', 'x', c1, c2, c3, c4]
+  return $ read $ "'" ++ c ++ "'"
   
 parseChar = do
   char '\''
