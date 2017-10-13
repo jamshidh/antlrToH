@@ -30,7 +30,7 @@ parseGrammar = do
   name <- parseWord
   char ';'
   whiteSpace
-  rules <- sepBy parseRule whiteSpace
+  rules <- endBy parseRule whiteSpace
   eof
   return Grammar{
     grammarName=name,
